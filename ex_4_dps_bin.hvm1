@@ -1,0 +1,153 @@
+import prelude.hvm1
+
+// Bin Enumerator
+// --------------
+
+(O xs) = λo λi λe (o xs)
+(I xs) = λo λi λe (i xs)
+E      = λo λi λe e
+
+(Bin.eq xs ys) = (xs
+  λxsp λys (ys λysp(Bin.eq xsp ysp) λysp(0) 0) 
+  λxsp λys (ys λysp(0) λysp(Bin.eq xsp ysp) 0) 
+  λys (ys λysp(0) λysp(0) 1)
+  ys)
+
+(Term.eq (Mat l0 r0) (Mat l1 r1)) = (U60.and (Term.eq l0 l1) (Term.eq r0 r1))
+(Term.eq (MkO t0)    (MkO t1))    = (Term.eq t0 t1)
+(Term.eq (MkI t0)    (MkI t1))    = (Term.eq t0 t1)
+(Term.eq Rec         Rec)         = 1
+(Term.eq Ret         Ret)         = 1
+(Term.eq _           _)           = 0
+
+Zero = (O Zero)
+Neg1 = (I Neg1)
+
+(L0 x) = (+ (* x 2) 0)
+(L1 x) = (+ (* x 2) 1)
+
+(ENUM lab s) =
+  let lA = (+ (* lab 4) 0)
+  let lB = (+ (* lab 4) 1)
+  let lC = (+ (* lab 4) 2)
+  let rc = (U60.if s λx(HVM.SUP lB Rec x) λx(x))
+  let rt = λx(HVM.SUP lC Ret x)
+  (rt (rc (HVM.SUP lA
+    (INTR (L0 lab) s)
+    (ELIM (L1 lab) s))))
+(INTR lab s) =
+  let lA = (+ (* lab 4) 3)
+  (HVM.SUP lA
+    (MkO (ENUM (L0 lab) s))
+    (MkI (ENUM (L1 lab) s)))
+(ELIM lab s) =
+  (Mat (ENUM (L0 lab) 1)
+       (ENUM (L1 lab) 1))
+
+(Make Ret      ) = λfλx(x)
+(Make Rec      ) = λfλx(f x)
+(Make (MkO trm)) = λfλx(O ((Make trm) f x))
+(Make (MkI trm)) = λfλx(I ((Make trm) f x))
+(Make (Mat l r)) = λfλx(x λx((Make l) f x) λx((Make r) f x) (E))
+
+(Bin.show xs) = (xs λxs(String.join ["O" (Bin.show xs)]) λxs(String.join ["I" (Bin.show xs)]) "E")
+(Bin.view xs) = (xs λxs(B0 (Bin.view xs)) λxs(B1 (Bin.view xs)) BE)
+
+(COL (HVM.SUP k a b)) = (Maybe.or (COL a) (COL b))
+(COL x)               = x
+
+(Flat (HVM.SUP k a b)) = (List.diagonal [(Flat a) (Flat b)])
+(Flat Ret)             = (Omega.pure Ret)
+(Flat Rec)             = (Omega.pure Rec)
+(Flat (MkO trm))       = (Omega.bind (Flat trm) λtrm(Omega.pure (MkO trm)))
+(Flat (MkI trm))       = (Omega.bind (Flat trm) λtrm(Omega.pure (MkI trm)))
+(Flat (Mat l r))       = (Omega.bind (Flat l) λl(Omega.bind (Flat r)λr(Omega.pure (Mat l r))))
+
+// TODO: implement a Term.show function
+// Term.show function implementation
+(Term.show Ret)              = "Ret"
+(Term.show Rec)              = "Rec"
+(Term.show (MkO term))       = (String.join ["(O " (Term.show term) ")"])
+(Term.show (MkI term))       = (String.join ["(I " (Term.show term) ")"])
+(Term.show (Mat left right)) = (String.join ["{" (Term.show left) "|" (Term.show right) "}"])
+
+(Test_same g cd fn) =
+  let x0 = (I (O (O (I (I (O (I (I (I (O E))))))))))
+  let y0 = (g x0)
+  let e0 = (Bin.eq (fn x0) y0)
+  let x1 = (O (I (O (O (O (I (O (I (O (O E))))))))))
+  let y1 = (g x1)
+  let e1 = (Bin.eq (fn x1) y1)
+  (U60.if (U60.and e0 e1) (Some cd) None)
+
+(Test_not cd fn) =
+  let x0 = (O (I (O (O (O (I (O (O E))))))))
+  let y0 = (I (O (I (I (I (O (I (I E))))))))
+  let e0 = (Bin.eq (fn x0) y0)
+  let x1 = (I (I (I (O (O (I (I (I E))))))))
+  let y1 = (O (O (O (I (I (O (O (O E))))))))
+  let e1 = (Bin.eq (fn x1) y1)
+  (U60.if (U60.and e0 e1) (Some cd) None)
+
+(Test_inc cd fn) =
+  let x0 = (O (I (O (O (O (I (O (O E))))))))
+  let y0 = (I (I (O (O (O (I (O (O E))))))))
+  let e0 = (Bin.eq (fn x0) y0)
+  let x1 = (I (I (I (O (O (I (I (I E))))))))
+  let y1 = (O (O (O (I (O (I (I (I E))))))))
+  let e1 = (Bin.eq (fn x1) y1)
+  (U60.if (U60.and e0 e1) (Some cd) None)
+
+(Test_mix cd fn) =
+  let x0 = (O (I (O (O (O (I (O (O E))))))))
+  let y0 = (I (O (I (I (I (O (I (O (I (O (I (I (I (O (I (O E))))))))))))))))
+  let e0 = (Bin.eq (fn x0) y0)
+  let x1 = (I (I (I (O (O (I (I (I E))))))))
+  let y1 = (I (I (I (I (I (I (I (O (I (O (I (I (I (I (I (I E))))))))))))))))
+  let e1 = (Bin.eq (fn x1) y1)
+  (U60.if (U60.and e0 e1) (Some cd) None)
+
+(Test_nxor cd fn) =
+  let x0 = (I (I (O (O (O (I (O (O E))))))))
+  let y0 = (I (I (O (I E))))
+  let e0 = (Bin.eq (fn x0) y0)
+  let x1 = (I (O (O (I (I (I (O (I E))))))))
+  let y1 = (O (O (I (O E))))
+  let e1 = (Bin.eq (fn x1) y1)
+  let x2 = (O (O (O (I (I (I (O (I E))))))))
+  let y2 = (I (O (I (O E))))
+  let e2 = (Bin.eq (fn x2) y2)
+  (U60.if (U60.and (U60.and e0 e1) e2) (Some cd) None)
+
+(Test_xor_xnor cd fn) =
+  let x0 = (I (O (O (I (I (O (I (I (I (O E))))))))))
+  let y0 = (I (O (I (O (I (O (O (I (I (O E))))))))))
+  let e0 = (Bin.eq (fn x0) y0)
+  let x1 = (O (I (O (O (O (I (O (I (O (O E))))))))))
+  let y1 = (I (O (O (I (I (O (I (O (O (I E)))))))))) 
+  let e1 = (Bin.eq (fn x1) y1)
+  (U60.if (U60.and e0 e1) (Some cd) None)
+
+(Test_hard cd fn) =
+  let x0 = (I (O (O (I (I (O (I (I (I (O E))))))))))
+  let y0 = (O (I (I (O (O (I (I (I (I (O (I E)))))))))))
+  let e0 = (Bin.eq (fn x0) y0)
+  let x1 = (O (I (O (O (O (I (O (I (O (O E))))))))))
+  let y1 = (I (O (O (O (I (O (I (O (O (O E))))))))))
+  let e1 = (Bin.eq (fn x1) y1)
+  (U60.if (U60.and e0 e1) (Some cd) None)
+
+Main =
+  //let term = (Mat (Mat (MkO (MkI (Rec))) (MkI (MkO (Rec)))) (Mat (MkI (MkO (Rec))) (MkO (MkI (Rec)))))
+  //let bits = (O (I (O (O (O (I (O (I (O (O E))))))))))
+  //let func = (Fix (Make term))
+  //(Bin.show (func bits))
+  //(Test_xor_xnor term (Fix (Make term)))
+
+  //let term = (Mat (Mat (MkI (MkO (Rec))) (MkO (MkI (Rec)))) (Mat (MkO (MkI (Rec))) (MkI (MkO (Rec)))))
+  //let func = (Fix (Make term))
+
+  let terms = (ENUM 1 0)
+  let funcs = (Fix (Make terms))
+  let found = (Test_xor_xnor terms funcs)
+  (Collapse found PQ.new)

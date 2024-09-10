@@ -1,0 +1,140 @@
+// Consider the ADD-CARRY function:
+
+// ADC :: Int -> [Int] -> [Int] -> Bool -> [Int]
+// ADC 0 a     b     c = []
+// ADC n (0:a) (0:b) 0 = 0 : ADC (n-1) a b 1
+// ADC n (0:a) (1:b) 0 = 1 : ADC (n-1) a b 1
+// ADC n (1:a) (0:b) 0 = 1 : ADC (n-1) a b 1
+// ADC n (1:a) (1:b) 0 = 0 : ADC (n-1) a b 0
+// ADC n (0:a) (0:b) 1 = 1 : ADC (n-1) a b 1
+// ADC n (0:a) (1:b) 1 = 0 : ADC (n-1) a b 0
+// ADC n (1:a) (0:b) 1 = 0 : ADC (n-1) a b 0
+// ADC n (1:a) (1:b) 1 = 1 : ADC (n-1) a b 0
+
+// Suppose we erased 16 bits from its implementation:
+
+// ADC :: Int -> [Int] -> [Int] -> Bool -> [Int]
+// ADC 0 a     b     c = []
+// ADC n (0:a) (0:b) 0 = ? : ADC (n-1) a b ?
+// ADC n (0:a) (1:b) 0 = ? : ADC (n-1) a b ?
+// ADC n (1:a) (0:b) 0 = ? : ADC (n-1) a b ?
+// ADC n (1:a) (1:b) 0 = ? : ADC (n-1) a b ?
+// ADC n (0:a) (0:b) 1 = ? : ADC (n-1) a b ?
+// ADC n (0:a) (1:b) 1 = ? : ADC (n-1) a b ?
+// ADC n (1:a) (0:b) 1 = ? : ADC (n-1) a b ?
+// ADC n (1:a) (1:b) 1 = ? : ADC (n-1) a b ?
+
+// To recover the original fn, we could test each choice in a loop (from 0 to 2^16).
+// Since a call takes about ~3k interactions, the search would take ~196m interactions.
+// On HVM, instead of a loop, we can use a superposition {0 1} on each hole ('?'). 
+// By just doing that, the same search now takes ~36k interactions (5444x speedup)!
+
+// type Bool = F | T
+F = λf λt f
+T = λf λt t
+
+// type Bin = (O Bin) | (I Bin)
+(O xs) = λo λi (o xs)
+(I xs) = λo λi (i xs)
+
+// type Nat = (S n) | Z
+(S n)  = λs λz (s n)
+Z      = λs λz z
+
+// If-Then-Else
+(If 0 t f) = f
+(If x t f) = t
+
+// Converts U60 to Bin
+(Bin 0 n) = E
+(Bin s n) = (If (== (% n 2) 0) (O (Bin (- s 1) (/ n 2))) (I (Bin (- s 1) (/ n 2))))
+
+// Converts Bin to U60
+(U60 0 bs) = 0
+(U60 n bs) = (bs λp (+ (* 2 (U60 (- n 1) p)) 0) λp (+ (* 2 (U60 (- n 1) p)) 1))
+
+// Converts U60 to Nat
+(Nat 0) = Z
+(Nat n) = (S (Nat (- n 1)))
+
+// Boolean Fns
+And = λa (a λb(F) λb(b))
+Or  = λa (a λb(T) λb(b))
+
+// Maybe Or
+(Join None     b) = b
+(Join (Some x) b) = (Some x)
+
+// Collapse an N-label Superposition
+(Collapse 0 x) = x
+(Collapse n x) = (HVM.DUP (- n 1) x λx0λx1(Collapse (- n 1) (Join x0 x1)))
+    
+// Checks if two Bins are equal
+Eq = λn (n
+  λn λa (a
+    λa λb (b λb ((Eq) n a b) λb F)
+    λa λb (b λb F λb ((Eq) n a b)))
+  λa λb T)
+
+// Target Add Function (we're searching this)
+Add = λn (n
+  λn λa (a
+    λa λb (b
+      λb λk (k
+        (O ((Add) n a b F))
+        (I ((Add) n a b F)))
+      λb λk (k
+        (I ((Add) n a b F))
+        (O ((Add) n a b T))))
+    λa λb (b
+      λb λk (k
+        (I ((Add) n a b F))
+        (O ((Add) n a b T)))
+      λb λk (k
+        (O ((Add) n a b T))
+        (I ((Add) n a b T)))))
+  λa λb λk E)
+
+// Superposed Function Template (with 16 missing bits)
+Fun = λn (n
+  λn λa (a
+    λa λb (b
+      λb λk (k
+        (#0{λx(O x) λx(I x)} ((Fun) n a b #8{T F}))
+        (#1{λx(O x) λx(I x)} ((Fun) n a b #9{T F})))
+      λb λk (k
+        (#2{λx(O x) λx(I x)} ((Fun) n a b #10{T F}))
+        (#3{λx(O x) λx(I x)} ((Fun) n a b #11{T F}))))
+    λa λb (b
+      λb λk (k
+        (#4{λx(O x) λx(I x)} ((Fun) n a b #12{T F}))
+        (#5{λx(O x) λx(I x)} ((Fun) n a b #13{T F})))
+      λb λk (k
+        (#6{λx(O x) λx(I x)} ((Fun) n a b #14{T F}))
+        (#7{λx(O x) λx(I x)} ((Fun) n a b #15{T F})))))
+  λa λb λe E)
+
+// Superposition Labels used in the Template
+Map = [
+  #0{0 1} #1{0 1}  #2{0 1}  #3{0 1}  #4{0 1}  #5{0 1}  #6{0 1}  #7{0 1}
+  #8{0 1} #9{0 1} #10{0 1} #11{0 1} #12{0 1} #13{0 1} #14{0 1} #15{0 1}
+]
+
+// Tests if `Fun a b == c`
+(Test s a b c) =
+  let x = ((Fun) (Nat s) (Bin s a) (Bin s b) F)
+  let y = (Bin s c)
+  ((Eq) (Nat s) x y)
+
+// Main
+// ----
+
+// Tests a single call to add
+//Main = (U60 16 ((Add) (Nat 16) (Bin 16 12345) (Bin 16 54321) F))
+
+// Finds the Binary Addition Function
+Main =
+  let e0 = (Test 16 48436 10318 58754) // test: 48436 + 10318 = 58754
+  let e1 = (Test 16 38148 25462 63610) // test: 38148 + 25462 = 63610
+  let ok = ((And) e0 e1) // looks for a Fun that passes both tests
+  (Collapse 16 (ok None (Some Map))) // output: [0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0]

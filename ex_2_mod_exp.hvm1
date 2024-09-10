@@ -1,0 +1,52 @@
+// Computes modular exponentiation by repeated ENUM rotation.
+// 
+// To compute `a ^ b % M`, we:
+// - 1. Create a generic ENUM with M variants: enum T { v0, v1, v2, ... vM }
+// - 2. Create a generic ENUM rotator: v0 -> v1, v1 -> v2, ... v1 -> v0
+// - 3. Apply that rotator a^b times to v0; the result will be `a ^ b % M`!
+// 
+// To test this, we compute `(123 ^ 10) % 257`.
+// This should require at least 792594609605189126649 function calls.
+// A Macbook M3 would take about 25,000 years to *count* to that number.
+// HVM outputs the correct answer (120) in 0 seconds (137k interactions).
+
+import prelude.hvm1
+
+// Applies a function N times
+(App 0) = λf λx x
+(App n) = λf λx ((App (/ n 2)) λk(f (f k)) ((U60.if (% n 2) f λx(x)) x))
+
+// Constructs an ENUM
+(Ctr n i) = (Ctr.go n i λx(x))
+  (Ctr.go 0 i ctx) = (List.get (ctx []) i)
+  (Ctr.go n i ctx) = λv (Ctr.go (- n 1) i λk(ctx (List.cons v k)))
+
+// Rotates an ENUM left
+(RotL n) = ((RotL.go n) λx(x))
+  (RotL.go 0) = ERR
+  (RotL.go 1) = λe0 λx0 (e0 λx4(x0 x4))
+  (RotL.go n) = λe0 ((RotL.go (- n 1)) λin λv (e0 λxL(in xL v)))
+
+// Rotates an ENUM right
+(RotR n) = ((RotR.go n) λx(x λx(x)))
+  (RotR.go 0) = ERR
+  (RotR.go 1) = λe0 λx0 λx1 (e0 λe1 ((e1 x0) x1))
+  (RotR.go n) = λe0 ((RotR.go (- n 1)) λin λv (e0 λe1 (in λk(e1 (k v)))))
+
+// Converts an ENUM to a U60
+(U60 0 i x) = x
+(U60 n i x) = (U60 (- n 1) (+ i 1) (x i))
+
+// Church-Nat exponentiation
+(Exp a b) = (b a)
+
+// Computes `a ^ b % m`
+Main =
+  let a = 123
+  let b = 10
+  let m = 257
+  let x = (Ctr m 0)
+  let f = (RotR m)
+  let e = (Exp (App a) (App b))
+  let r = (e f x)
+  (U60 m 0 r)

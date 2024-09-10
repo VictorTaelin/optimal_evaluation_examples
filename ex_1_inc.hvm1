@@ -1,0 +1,24 @@
+import prelude.hvm1
+
+// Applies a function N times
+(App 0 f x) = x
+(App n f x) = (App (/ n 2) λk(f (f k)) ((U60.if (% n 2) f λx(x)) x))
+
+// Bitstring type
+(O x) = λo λi λe (o x)
+(I x) = λo λi λe (i x)
+E     = λo λi λe e
+
+// Stringifies a bitstring
+(Show xs) = (xs
+  λx(String.cons 'O' (Show x))
+  λx(String.cons 'I' (Show x))
+  "E")
+
+// Increments a bitstring
+(Inc xs) = λoλiλe(xs i λx(o (Inc x)) e)
+
+(Zeros 0) = E
+(Zeros n) = (O (Zeros (- n 1)))
+
+Main = (Show (App 100000000 λx(Inc x) (Zeros 64)))

@@ -1,0 +1,18 @@
+import prelude.hvm1
+
+// Applies a function N times
+(App 0 f x) = x
+(App n f x) = (App (/ n 2) λk(f (f k)) ((U60.if (% n 2) f λx(x)) x))
+
+// Boolean type
+T = λt λf (t)
+F = λt λf (f)
+
+// Stringifies a boolean
+(Str x) = (x "T" "F")
+
+// Negates a boolean
+(Neg x) = λtλf(x f t)
+
+// Applies 'neg' 100m times to True
+Main = (Str (App 100000000 λx(Neg x) T))

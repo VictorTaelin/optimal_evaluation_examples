@@ -1,0 +1,226 @@
+// Composition
+(Rep 0 f x) = x
+(Rep n f x) = (f (Rep (- n 1) f x))
+(Rap 0 f x) = x
+(Rap n f x) = (Rap (/ n 2) λk(f (f k)) (Rep (% n 2) f x))
+
+// U60
+// ---
+
+(U60.if 0 t f) = f
+(U60.if x t f) = t
+
+(U60.show n) = (U60.show.go n "")
+(U60.show.go n x) = (λx(U60.if (> n 9) (U60.show.go (/ n 10) x) x) (String.cons (+ 48 (% n 10)) x))
+
+(U60.seq 0 cont) = (cont 0)
+(U60.seq n cont) = (cont n)
+
+(U60.and 0 x) = 0
+(U60.and 1 x) = x
+
+(U60.or 0 x) = x
+(U60.or 1 x) = 1
+
+// U60.to_bits
+(U60.to_bits 0) = E
+(U60.to_bits n) = (U60.if (== (% n 2) 0) (O (U60.to_bits (/ n 2))) (I (U60.to_bits (/ n 2))))
+
+// List
+// ----
+
+(List.get (List.nil)       _) = (Err "out-of-bounds")
+(List.get (List.cons x xs) 0) = x
+(List.get (List.cons x xs) n) = (List.get xs (- n 1))
+
+(List.map f List.nil)         = List.nil
+(List.map f (List.cons x xs)) = (List.cons (f x) (List.map f xs))
+
+(List.imap f List.nil)         = List.nil
+(List.imap f (List.cons x xs)) = (List.cons (f 0 x) (List.imap λiλx(f (+ i 1) x) xs))
+
+(List.concat (List.nil)       ys) = ys
+(List.concat (List.cons x xs) ys) = (List.cons x (List.concat xs ys))
+
+(List.flatten List.nil)         = List.nil
+(List.flatten (List.cons x xs)) = (List.concat x (List.flatten xs))
+
+(List.length List.nil)         = 0
+(List.length (List.cons x xs)) = (+ 1 (List.length xs))
+
+(List.take 0 xs)               = List.nil
+(List.take n List.nil)         = List.nil
+(List.take n (List.cons x xs)) = (List.cons x (List.take (- n 1) xs))
+
+(List.head (List.cons x xs)) = x
+(List.tail (List.cons x xs)) = xs
+
+(List.push x List.nil)         = (List.cons x List.nil)
+(List.push x (List.cons y ys)) = (List.cons y (List.push x ys))
+
+(List.diagonal xs) = (List.flatten (List.stripe xs))
+
+(List.stripe List.nil)                         = []
+(List.stripe (List.cons List.nil         xss)) = (List.stripe xss)
+(List.stripe (List.cons (List.cons x xs) xss)) = (List.cons [x] (List.zip_cons xs (List.stripe xss)))
+
+(List.zip_cons []               ys)               = ys
+(List.zip_cons xs               [])               = (List.map λk(List.cons k []) xs)
+(List.zip_cons (List.cons x xs) (List.cons y ys)) = (List.cons (List.cons x y) (List.zip_cons xs ys))
+
+(List.find cond List.nil)         = None
+(List.find cond (List.cons x xs)) = (U60.if (cond x) (Some x) (List.find cond xs))
+
+(List.pure x)    = (List.cons x List.nil)
+(List.bind xs f) = (List.flatten (List.map f xs))
+
+(Omega.pure x)    = [x]
+(Omega.bind xs f) = (List.diagonal (List.map f xs))
+
+// String
+// ------
+
+(String.concat String.nil         ys) = ys
+(String.concat (String.cons x xs) ys) = (String.cons x (String.concat xs ys))
+
+(String.join List.nil)         = String.nil
+(String.join (List.cons x xs)) = (String.concat x (String.join xs))
+
+(String.seq (String.cons x xs) cont) = (U60.seq x λx(String.seq xs λxs(cont (String.cons x xs))))
+(String.seq String.nil         cont) = (cont String.nil)
+
+(String.eq String.nil         String.nil)         = 1
+(String.eq (String.cons x xs) (String.cons y ys)) = (U60.and (== x y) (String.eq xs ys))
+(String.eq xs                 ys)                 = 0
+
+(String.take 0 xs)                 = String.nil
+(String.take n String.nil)         = String.nil
+(String.take n (String.cons x xs)) = (String.cons x (String.take (- n 1) xs))
+
+// Tup2
+// ----
+
+(Tup2.match (Tup2.new fst snd) fn) = (fn fst snd)
+(Tup2.fst (Tup2.new fst snd))      = fst
+(Tup2.snd (Tup2.new fst snd))      = snd
+
+// Maybe
+// -----
+
+(Maybe.or None     b) = b
+(Maybe.or (Some x) b) = (Some x)
+
+(Maybe.bind None     f) = None
+(Maybe.bind (Some x) f) = (f x)
+
+(Maybe.pure x) = (Some x)
+
+(Maybe.match None     f g) = (f)
+(Maybe.match (Some x) f g) = (g x)
+
+// Either
+// ------
+
+(Either.match (Left x) f g)  = (f x)
+(Either.match (Right x) f g) = (g x)
+
+(Either.map_left f (Left x))  = (Left (f x))
+(Either.map_left f (Right x)) = (Right x)
+
+(Either.map_right f (Left x))  = (Left x)
+(Either.map_right f (Right x)) = (Right (f x))
+
+(Either.bind (Left x) f)  = (Left x)
+(Either.bind (Right x) f) = (f x)
+
+(Either.pure x) = (Right x)
+
+// Map (with Bits keys)
+// --------------------
+
+// data BM A = BM.leaf | (BM.node A BM BM)
+
+// Returns true if value is present on BM
+(BM.has E        (BM.node (Some val) lft rgt)) = 1
+(BM.has (O bits) (BM.node val lft rgt))        = (BM.has bits lft)
+(BM.has (I bits) (BM.node val lft rgt))        = (BM.has bits rgt)
+(BM.has key      val)                          = 0
+
+// Gets a value from a BM
+(BM.get E        (BM.leaf))             = None
+(BM.get E        (BM.node val lft rgt)) = val
+(BM.get (O bits) (BM.leaf))             = None
+(BM.get (O bits) (BM.node val lft rgt)) = (BM.get bits lft)
+(BM.get (I bits) (BM.leaf))             = None
+(BM.get (I bits) (BM.node val lft rgt)) = (BM.get bits rgt)
+
+// Sets a value on a BM
+(BM.set E        val (BM.leaf))           = (BM.node (Some val) BM.leaf BM.leaf)
+(BM.set E        val (BM.node _ lft rgt)) = (BM.node (Some val) lft rgt)
+(BM.set (O bits) val (BM.leaf))           = (BM.node None (BM.set bits val BM.leaf) BM.leaf)
+(BM.set (O bits) val (BM.node v lft rgt)) = (BM.node v (BM.set bits val lft) rgt)
+(BM.set (I bits) val (BM.leaf))           = (BM.node None BM.leaf (BM.set bits val BM.leaf))
+(BM.set (I bits) val (BM.node v lft rgt)) = (BM.node v lft (BM.set bits val rgt))
+
+// Gets a value from a BM, returns a copy of the Map
+(BM.got E        (BM.leaf))             = λt(t BM.leaf None)
+(BM.got E        (BM.node val lft rgt)) = λt(t (BM.node val lft rgt) val)
+(BM.got (O bits) (BM.leaf))             = λt(t BM.leaf None)
+(BM.got (O bits) (BM.node val lft rgt)) = ((BM.got bits lft) λlftλgotλt(t (BM.node val lft rgt) got))
+(BM.got (I bits) (BM.leaf))             = λt(t BM.leaf None)
+(BM.got (I bits) (BM.node val lft rgt)) = ((BM.got bits rgt) λrgtλgotλt(t (BM.node val lft rgt) got))
+
+// Map (with U60 keys)
+// -------------------
+
+(U60.Map.new)             = BM.leaf
+(U60.Map.has key map)     = (BM.has (U60.to_bits key) map)
+(U60.Map.get key map)     = (BM.get (U60.to_bits key) map)
+(U60.Map.got key map)     = (BM.got (U60.to_bits key) map)
+(U60.Map.set key val map) = (BM.set (U60.to_bits key) val map)
+
+// Priority Queue
+// --------------
+
+// data PQ = Empty | Node U60 U60 PQ PQ
+
+// PQ.new: Create a new empty Priority Queue
+(PQ.new) = Empty
+
+// PQ.put: Add a new (key, val) pair to the Priority Queue
+(PQ.put key val Empty)              = (Node key val Empty Empty)
+(PQ.put key val (Node k v lft rgt)) = (PQ.put.aux (< key k) key val k v lft rgt)
+
+(PQ.put.aux 1 key val k v lft rgt) = (Node key val (Node k v lft rgt) Empty)
+(PQ.put.aux 0 key val k v lft rgt) = (Node k v (PQ.put key val lft) rgt)
+
+// PQ.get: Get the smallest element and return it with the updated queue
+(PQ.get Empty)              = λsomeλnone(none)
+(PQ.get (Node k v lft rgt)) = λsomeλnone(some λs(s k v (PQ.merge lft rgt)))
+
+// Helper function to merge two priority queues
+(PQ.merge Empty              rgt)                = rgt
+(PQ.merge lft                Empty)              = lft
+(PQ.merge (Node k1 v1 l1 r1) (Node k2 v2 l2 r2)) = (PQ.merge.aux (< k1 k2) k1 v1 l1 r1 k2 v2 l2 r2)
+
+(PQ.merge.aux 1 k1 v1 l1 r1 k2 v2 l2 r2) = (Node k1 v1 (PQ.merge r1 (Node k2 v2 l2 r2)) l1)
+(PQ.merge.aux 0 k1 v1 l1 r1 k2 v2 l2 r2) = (Node k2 v2 (PQ.merge (Node k1 v1 l1 r1) r2) l2)
+
+// Control
+// -------
+
+// Fixed Point
+(Fix f) = (f (Fix f))
+
+// Collapser
+(Collapse (HVM.SUP k a b) pq) = (Collapse None (PQ.put k a (PQ.put k b pq)))
+(Collapse (Some x)        pq) = x
+(Collapse None            pq) = ((PQ.get pq) λf(f λkλxλpq(Collapse x pq)) None)
+
+(DoCollapse val map) = (Collapse (U60.if val (Some map) None) PQ.new)
+
+// Debug
+// -----
+
+(Print []  value) = value
+(Print msg value) = (String.seq (String.join msg) λstr(HVM.log str value))

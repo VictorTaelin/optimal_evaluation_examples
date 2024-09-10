@@ -1,0 +1,217 @@
+// Attempts to find a lifetime-40 rule for a 3-color cellular automaton.
+// 
+// https://writings.stephenwolfram.com/2024/08/whats-really-going-on-in-machine-learning-some-minimal-models/
+// 
+// The rule we're searching is:
+// 
+// [B] [B] [B] => [R]
+// [B] [B] [R] => [W]
+// [B] [B] [W] => [W]
+// [B] [R] [B] => [B]
+// [B] [R] [R] => [R]
+// [B] [R] [W] => [R]
+// [B] [W] [B] => [R]
+// [B] [W] [R] => [W]
+// [B] [W] [W] => [W]
+// [R] [B] [B] => [W]
+// [R] [B] [R] => [W]
+// [R] [B] [W] => [R]
+// [R] [R] [B] => [W]
+// [R] [R] [R] => [B]
+// [R] [R] [W] => [B]
+// [R] [W] [B] => [R]
+// [R] [W] [R] => [R]
+// [R] [W] [W] => [B]
+// [W] [B] [B] => [B]
+// [W] [B] [R] => [R]
+// [W] [B] [W] => [W]
+// [W] [R] [B] => [R]
+// [W] [R] [R] => [W]
+// [W] [R] [W] => [R]
+// [W] [W] [B] => [W]
+// [W] [W] [R] => [B]
+// [W] [W] [W] => [W]
+// 
+// Since:
+// - each pass takes about ~307 interactions
+// - each evaluation takes about ~20 passes
+// - we consider about 3^20 possible rules
+// 
+// Then, this should take, at least:
+//   ~ 21_408_856_222_140 interactions (20 * 307 * 3^20)
+// 
+// On HVM, with superpositions, it takes:
+//   ~ 78_439_908 interactions (272_933x speedup?)
+// 
+// But I'm not sure. I didn't test on conventional languages.
+// I don't know how many loop iterations it'd actually take.
+// This is only an estimative based on limited exploration.
+
+import prelude.hvm1
+
+(Nat 0) = Z
+(Nat n) = (S (Nat (- n 1)))
+
+(Nat.eq Z     Z)     = 1
+(Nat.eq (S n) Z)     = 0
+(Nat.eq Z     (S m)) = 0
+(Nat.eq (S n) (S m)) = (Nat.eq n m)
+
+(Len List.nil)         = Z
+(Len (List.cons x xs)) = (S (Len xs))
+
+(U60 Z)     = 0
+(U60 (S n)) = (+ 1 (U60 n))
+
+(B xs) = λb λr λw (b xs)
+(R xs) = λb λr λw (r xs)
+(W xs) = λb λr λw (w xs)
+
+Rf = λxs(R xs)
+Bf = λxs(B xs)
+Wf = λxs(W xs)
+
+(Bx) = λb λr λw b
+(Rx) = λb λr λw r
+(Wx) = λb λr λw w
+
+(ATM.show xs) = (xs
+  λxs (String.cons 'B' (ATM.show xs))
+  λxs (String.cons 'R' (ATM.show xs))
+  λxs (String.cons '_' (ATM.show xs)))
+
+ATM.blank = (W ATM.blank)
+
+// Checks if a grid is empty
+(Emp 0 xs) = 1
+(Emp n xs) = (xs λxs(0) λxs(0) λxs(Emp (- n 1) xs))
+
+(SupF k) = (HVM.SUP k Wf (HVM.SUP k Bf Rf))
+(SupX k) = (HVM.SUP k WX (HVM.SUP k BX RX))
+
+Map = [
+  (SupX  0) (SupX  1) (SupX  2)
+  (SupX  3) (SupX  4) (SupX  5)
+  (SupX  6) (SupX  7) (SupX  8)
+  (SupX  9) (SupX 10) (SupX 11)
+  (SupX 12) (SupX 13) (SupX 14)
+  (SupX 15) (SupX 16) (SupX 17)
+  (SupX 18) (SupX 19) (SupX 20)
+  (SupX 21) (SupX 22) (SupX 23)
+  (SupX 24) (SupX 25) (SupX 26)
+]
+
+// The table we're looking for:
+(Run) =
+  λx0(x0
+    λxs(xs
+      λxs(xs
+        λxs(R ((Run) Bx (B xs)))
+        λxs(W ((Run) Bx (R xs)))
+        λxs(W ((Run) Bx (W xs))))
+      λxs(xs
+        λxs(B ((Run) Rx (B xs)))
+        λxs(R ((Run) Rx (R xs)))
+        λxs(R ((Run) Rx (W xs))))
+      λxs(xs
+        λxs(R ((Run) Wx (B xs)))
+        λxs(W ((Run) Wx (R xs)))
+        λxs(W ((Run) Wx (W xs)))))
+    λxs(xs
+      λxs(xs
+        λxs(W ((Run) Bx (B xs)))
+        λxs(W ((Run) Bx (R xs)))
+        λxs(R ((Run) Bx (W xs))))
+      λxs(xs
+        λxs(W ((Run) Rx (B xs)))
+        λxs(B ((Run) Rx (R xs)))
+        λxs(B ((Run) Rx (W xs))))
+      λxs(xs
+        λxs(R ((Run) Wx (B xs)))
+        λxs(R ((Run) Wx (R xs)))
+        λxs(B ((Run) Wx (W xs)))))
+    λxs(xs
+      λxs(xs
+        λxs(B ((Run) Bx (B xs)))
+        λxs(R ((Run) Bx (R xs)))
+        λxs(W ((Run) Bx (W xs))))
+      λxs(xs
+        λxs(R ((Run) Rx (B xs)))
+        λxs(W ((Run) Rx (R xs)))
+        λxs(R ((Run) Rx (W xs))))
+      λxs(xs
+        λxs(W ((Run) Wx (B xs)))
+        λxs(B ((Run) Wx (R xs)))
+        λxs(W ((Run) Wx (W xs))))))
+
+// A superposition of many tables:
+//(Run) =
+  //λx0(x0
+    //λxs(xs
+      //λxs(xs
+        //λxs((SupF 0) ((Run) Bx (B xs)))
+        //λxs((SupF 1) ((Run) Bx (R xs)))
+        //λxs((SupF 2) ((Run) Bx (W xs))))
+      //λxs(xs
+        //λxs((SupF 3) ((Run) Rx (B xs)))
+        //λxs((SupF 4) ((Run) Rx (R xs)))
+        //λxs((SupF 5) ((Run) Rx (W xs))))
+      //λxs(xs
+        //λxs((SupF 6) ((Run) Wx (B xs)))
+        //λxs((SupF 7) ((Run) Wx (R xs)))
+        //λxs((SupF 8) ((Run) Wx (W xs)))))
+    //λxs(xs
+      //λxs(xs
+        //λxs((SupF 9) ((Run) Bx (B xs)))
+        //λxs((SupF 10) ((Run) Bx (R xs)))
+        //λxs((SupF 11) ((Run) Bx (W xs))))
+      //λxs(xs
+        //λxs((SupF 12) ((Run) Rx (B xs)))
+        //λxs((SupF 13) ((Run) Rx (R xs)))
+        //λxs((SupF 14) ((Run) Rx (W xs))))
+      //λxs(xs
+        //λxs((SupF 15) ((Run) Wx (B xs)))
+        //λxs((SupF 16) ((Run) Wx (R xs)))
+        //λxs((SupF 17) ((Run) Wx (W xs)))))
+    //λxs(xs
+      //λxs(xs
+        //λxs((SupF 18) ((Run) Bx (B xs)))
+        //λxs((SupF 19) ((Run) Bx (R xs)))
+        //λxs((SupF 20) ((Run) Bx (W xs))))
+      //λxs(xs
+        //λxs(R ((Run) Rx (B xs)))
+        //λxs(W ((Run) Rx (R xs)))
+        //λxs(R ((Run) Rx (W xs))))
+      //λxs(xs
+        //λxs(W ((Run) Wx (B xs)))
+        //λxs(B ((Run) Wx (R xs)))
+        //λxs(W ((Run) Wx (W xs))))))
+
+// Counts the HP of the table above
+(Count len xs) = (U60.if (Emp len xs) Z (S (Count len ((Run) Wx xs))))
+
+// Pretty prints an evolution
+Main =
+  let len = 17
+  let atm = (W (W (W (W (W (W (W (W (R ATM.blank)))))))))
+  (Main.go 42 len atm)
+(Main.go 0 len atm) = ""
+(Main.go n len atm) = (String.join [
+  (String.cons 10 String.nil)
+  (String.take len (ATM.show atm))
+  (Main.go (- n 1) len ((Run) Wx atm))
+])
+
+// Tests a single call
+//Main =
+  //let len = 17
+  //let atm = (W (W (W (W (W (W (W (W (R ATM.blank)))))))))
+  //(String.take len (ATM.show ((Run) Wx atm)))
+
+// Finds an automata with given HP
+//Main =
+  //let hp  = 40
+  //let len = 17
+  //let atm = (W (W (W (W (W (W (W (W (R ATM.blank)))))))))
+  //let got = (Nat.eq (Count len atm) (Nat hp))
+  //(DoCollapse got Map)

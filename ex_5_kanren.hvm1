@@ -1,0 +1,180 @@
+// Prelude
+// -------
+
+(U60.if 0 t f) = f
+(U60.if x t f) = t
+
+(U60.show n) = (U60.show.go n "")
+(U60.show.go n x) = (λx(U60.if (> n 9) (U60.show.go (/ n 10) x) x) (String.cons (+ 48 (% n 10)) x))
+
+(U60.seq 0 cont) = (cont 0)
+(U60.seq n cont) = (cont n)
+
+(U60.and 0 x) = 0
+(U60.and 1 x) = x
+
+(U60.or 0 x) = x
+(U60.or 1 x) = 1
+
+(U60.to_bits 0) = E
+(U60.to_bits n) = (U60.if (== (% n 2) 0) (O (U60.to_bits (/ n 2))) (I (U60.to_bits (/ n 2))))
+
+(List.concat (List.nil)       ys) = ys
+(List.concat (List.cons x xs) ys) = (List.cons x (List.concat xs ys))
+
+(List.bind xs f) = (List.flatten (List.map f xs))
+
+(List.flatten List.nil)         = List.nil
+(List.flatten (List.cons x xs)) = (List.concat x (List.flatten xs))
+
+(List.map f List.nil)         = List.nil
+(List.map f (List.cons x xs)) = (List.cons (f x) (List.map f xs))
+
+(String.concat String.nil         ys) = ys
+(String.concat (String.cons x xs) ys) = (String.cons x (String.concat xs ys))
+
+(String.join List.nil)         = String.nil
+(String.join (List.cons x xs)) = (String.concat x (String.join xs))
+
+(String.seq (String.cons x xs) cont) = (U60.seq x λx(String.seq xs λxs(cont (String.cons x xs))))
+(String.seq String.nil         cont) = (cont String.nil)
+
+(Tup2.match (Tup2.new fst snd) fn) = (fn fst snd)
+
+(Maybe.bind None     f) = None
+(Maybe.bind (Some x) f) = (f x)
+
+(Maybe.match None     f g) = (f)
+(Maybe.match (Some x) f g) = (g x)
+
+(BM.has E        (BM.node (Some val) lft rgt)) = 1
+(BM.has (O bits) (BM.node val lft rgt))        = (BM.has bits lft)
+(BM.has (I bits) (BM.node val lft rgt))        = (BM.has bits rgt)
+(BM.has key      val)                          = 0
+
+(BM.get E        (BM.leaf))             = None
+(BM.get E        (BM.node val lft rgt)) = val
+(BM.get (O bits) (BM.leaf))             = None
+(BM.get (O bits) (BM.node val lft rgt)) = (BM.get bits lft)
+(BM.get (I bits) (BM.leaf))             = None
+(BM.get (I bits) (BM.node val lft rgt)) = (BM.get bits rgt)
+
+(BM.set E        val (BM.leaf))           = (BM.node (Some val) BM.leaf BM.leaf)
+(BM.set E        val (BM.node _ lft rgt)) = (BM.node (Some val) lft rgt)
+(BM.set (O bits) val (BM.leaf))           = (BM.node None (BM.set bits val BM.leaf) BM.leaf)
+(BM.set (O bits) val (BM.node v lft rgt)) = (BM.node v (BM.set bits val lft) rgt)
+(BM.set (I bits) val (BM.leaf))           = (BM.node None BM.leaf (BM.set bits val BM.leaf))
+(BM.set (I bits) val (BM.node v lft rgt)) = (BM.node v lft (BM.set bits val rgt))
+
+(BM.got E        (BM.leaf))             = λt(t BM.leaf None)
+(BM.got E        (BM.node val lft rgt)) = λt(t (BM.node val lft rgt) val)
+(BM.got (O bits) (BM.leaf))             = λt(t BM.leaf None)
+(BM.got (O bits) (BM.node val lft rgt)) = ((BM.got bits lft) λlftλgotλt(t (BM.node val lft rgt) got))
+(BM.got (I bits) (BM.leaf))             = λt(t BM.leaf None)
+(BM.got (I bits) (BM.node val lft rgt)) = ((BM.got bits rgt) λrgtλgotλt(t (BM.node val lft rgt) got))
+
+(U60.Map.new)             = BM.leaf
+(U60.Map.has key map)     = (BM.has (U60.to_bits key) map)
+(U60.Map.get key map)     = (BM.get (U60.to_bits key) map)
+(U60.Map.got key map)     = (BM.got (U60.to_bits key) map)
+(U60.Map.set key val map) = (BM.set (U60.to_bits key) val map)
+
+(Print []  value) = value
+(Print msg value) = (String.seq (String.join msg) λstr(HVM.log str value))
+
+// MicroKanren.hvm1
+// ----------------
+
+// data Term  = TVar Int | TTag Int | TCon Term Term | Nil deriving (Eq)
+// type Sub   = [(Int, Term)]
+// type State = (Sub, Int)
+// type Goal  = State -> [State]
+
+// Converts a term to a String
+(Pretty (TVar idx))     = (String.join ["x" (U60.show idx)])
+(Pretty (TTag lab))     = (String.join ["#" (U60.show lab)])
+(Pretty (TCon fst snd)) = (String.join ["(" (Pretty fst) "," (Pretty snd) ")"])
+(Pretty Nil)            = "()"
+
+// Derefs a variable until we find a value
+(Deref (TVar idx) sub) =
+  ((U60.Map.got idx sub) λsubλgot
+  ((Maybe.match got
+    λsubλt(t sub (TVar idx))
+    λtmλsub(Deref tm sub))
+  sub))
+(Deref tm sub) = λt(t sub tm)
+
+// Unifies 'a' and 'b'
+(Unify a b sub) =
+  ((Deref a sub) λsubλa
+  ((Deref b sub) λsubλb
+  (Unify.go a b sub)))
+
+// Recursive unifier
+(Unify.go (TVar a_idx)       b                  sub) = (Some (U60.Map.set a_idx b sub))
+(Unify.go a                  (TVar b_idx)       sub) = (Some (U60.Map.set b_idx a sub))
+(Unify.go (TTag a_lab)       (TTag b_lab)       sub) = (U60.if (== a_lab b_lab) (Some sub) None)
+(Unify.go (TCon a_fst a_snd) (TCon b_fst b_snd) sub) = (Maybe.bind (Unify a_fst b_fst sub) λx(Unify a_snd b_snd x))
+(Unify.go _                  _                  sub) = None
+
+// Declares two values as equal
+(Equal a b) = λsc
+  (Tup2.match sc λsλc
+  (Maybe.match (Unify a b s)
+    []
+    λs[(Tup2.new s c)]))
+
+// Binds a fresh metavar
+(Bind f) = λsc
+  (Tup2.match sc λsλc
+  (f (TVar c) (Tup2.new s (+ c 1))))
+
+// Logical AND
+(Conj g1 g2) = λsc
+  (List.bind (g1 sc) g2)
+
+// Logical OR
+(Disj g1 g2) = λsc
+  (List.concat (g1 sc) (g2 sc))
+
+// Initial State
+(Initial) =
+  (Tup2.new U60.Map.new 0)
+
+// Resolve: Helper function to fully resolve a term
+(Resolve (TVar idx)     s) = (Maybe.match (U60.Map.get idx s) (TVar idx) λt_(Resolve t_ s))
+(Resolve (TCon fst snd) s) = (TCon (Resolve fst s) (Resolve snd s))
+(Resolve t              s) = t
+
+// Nat number representation
+(NZ)   = (TTag 0)
+(NS n) = (TCon (TTag 1) n)
+
+// Addition for Nat numbers
+(Add a b c) = (Disj
+  (Conj (Equal a NZ) (Equal b c))
+  (Bind λa_ (Bind λc_
+    (Conj (Equal a (NS a_))
+    (Conj (Equal c (NS c_))
+    (Add a_ b c_))))))
+
+// Helper function to convert U60 to Nat Term
+(IntToNat 0) = NZ
+(IntToNat n) = (NS (IntToNat (- n 1)))
+
+// Helper function to convert Nat Term to U60
+(NatToInt (TTag 0))           = (Some 0)
+(NatToInt (TCon (TTag 1) n))  = (Maybe.bind (NatToInt n) λx(Some (+ x 1)))
+(NatToInt _)                  = None
+
+(Main) =
+  let goal = (Bind λx(Add (IntToNat 1000) x (IntToNat 1042)))
+  (Pretty (Main.solution (goal Initial)))
+
+(Main.solution []) = (Print ["Done"] Unit)
+(Main.solution (List.cons x xs)) = 
+  (Tup2.match x λsλc
+  (Maybe.match (U60.Map.get 0 s)
+    (Main.solution xs)
+    λterm(term)))
